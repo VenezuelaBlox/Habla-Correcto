@@ -1,0 +1,176 @@
+import os
+import random
+import time
+from googletrans import Translator
+import numpy as np 
+import scipy.io.wavfile as wav
+import sounddevice as sd
+import speech_recognition as sr
+
+# --- DICCIONARIO OFICIAL DE PALABRAS ---
+words_by_level = {
+    "facil": ["gato", "perro", "manzana", "leche", "sol"],
+    "medio": ["banano", "escuela", "amigo", "ventana", "amarillo"],
+    "dificil": [
+        "tecnologia",
+        "universidad",
+        "informacion",
+        "pronunciacion",
+        "imaginacion",
+    ],
+}
+
+# --- CONFIGURACIÓN DE AUDIO ---
+DURATION = 3.5  # Tiempo justo para pronunciar una sola palabra
+SAMPLE_RATE = 44100
+FILE_NAME = "output.wav"
+translator = Translator()
+
+def mostrar_interfaz():
+    """Criterio: Interfaz con gráficos ASCII corregidos y emojis explicativos."""
+    print("=" * 75)
+    # Se añade un espacio al final de la línea 4 para evitar el SyntaxError por la barra invertida
+    print(" _   _         _     _          _____                               _        ")
+    print("| | | |       | |   | |        / ____|                             | |       ")
+    print("| |__| | __ _ | |__ | |  __ _ | |      ___  _ __ _ __ ___  ___  ___| |_  ___ ")
+    print(r"|  __  |/ _` || '_ \| | / _` || |     / _ \| '__| '__/ _ \/ __|/ __| __|/ _ \ ")
+    print("| |  | | (_| || |_) | || (_| || |____| (_) | |  | | |  __/|__ \ (__| |_| (_) |")
+    print("|_|  |_|\\__,_|_.__/|_| \\__,_| \\_____\\___/|_|  |_|  \\___||___/\\___|\\__|\\___/ ")
+    print("=" * 75)
+    print("       🗣️  ¡BIENVENIDO A: HABLA CORRECTO! 🗣️")
+    print("=" * 75)
+    print("  🎯 REGLAS: Mira la palabra en español y pronuncia su traducción en INGLÉS.")
+    print("  ⚠️  ¡El juego termina si acumulas 3 errores!")
+    print("=" * 75)
+
+def seleccionar_dificultad():
+    """Criterio: Configuración de dificultad elegida por el usuario."""
+    while True:
+        print("\n📊 Niveles de dificultad disponibles:")
+        print("1 🟢 Fácil (Palabras cortas)")
+        print("2 🟡 Medio (Palabras cotidianas)")
+        print("3 🔴 Difícil (Palabras complejas)")
+        opcion = input("Elige tu nivel (1, 2 o 3): ").strip()
+        
+        if opcion == "1":
+            return "facil"
+        elif opcion == "2":
+            return "medio"
+        elif opcion == "3":
+            return "dificil"
+        print("❌ Opción inválida. Escribe 1, 2 o 3.")
+
+def obtener_traduccion_ingles(palabra_es):
+    """Criterio: Conexión con la biblioteca googletrans y respaldo local seguro."""
+    try:
+        resultado = translator.translate(palabra_es, src="es", dest="en")
+        return resultado.text.lower().strip()
+    except Exception:
+        # Fallback local seguro por si la API pública de Google tiene microcortes
+        fallbacks = {
+            "gato": "cat",
+            "perro": "dog",
+            "manzana": "apple",
+            "leche": "milk",
+            "sol": "sun",
+            "banano": "banana",
+            "escuela": "school",
+            "amigo": "friend",
+            "ventana": "window",
+            "amarillo": "yellow",
+            "tecnologia": "technology",
+            "universidad": "university",
+            "informacion": "information",
+            "pronunciacion": "pronunciation",
+            "imaginacion": "imagination",
+        }
+        return fallbacks.get(palabra_es, "")
+
+def jugar():
+    mostrar_interfaz()
+    nivel = seleccionar_dificultad()
+    
+    # Copiamos la lista correspondiente del diccionario oficial y la mezclamos
+    lista_palabras = list(words_by_level[nivel])
+    random.shuffle(lista_palabras)
+    
+    # Criterio: Sistema de puntuación y control de errores
+    puntuacion = 0
+    errores = 0
+    MAX_ERRORES = 3
+    
+    print(f"\n🚀 ¡Arrancamos en nivel {nivel.upper()}!")
+    
+    while errores < MAX_ERRORES and len(lista_palabras) > 0:
+        palabra_reto = lista_palabras.pop()
+        traduccion_correcta = obtener_traduccion_ingles(palabra_reto)
+        
+        print(f"\n🤔 Palabra a traducir: 【 {palabra_reto.upper()} 】")
+        print("La grabación inicia en...")
+        for i in range(3, 0, -1):
+            print(f"⏱️  {i}...")
+            time.sleep(1)
+            
+        # Grabación usando sounddevice
+        print("🎤 ¡HABLA AHORA!")
+        recording = sd.rec(
+            int(DURATION * SAMPLE_RATE),
+            samplerate=SAMPLE_RATE,
+            channels=1,
+            dtype="int16",
+        )
+        sd.wait()
+        
+        # Guardado en archivo WAV usando scipy
+        wav.write(FILE_NAME, SAMPLE_RATE, recording)
+        print("✅ Grabación finalizada. Procesando...")
+        
+        # Reconocimiento usando speech_recognition
+        recognizer = sr.Recognizer()
+        reconocido = ""
+        
+        if os.path.exists(FILE_NAME):
+            with sr.AudioFile(FILE_NAME) as source:
+                audio = recognizer.record(source)
+            try:
+                # El estudiante debe responder pronunciando en inglés ('en-US')
+                reconocido = recognizer.recognize_google(audio, language="en-US")
+                # Criterio: Convertir a minúsculas de forma estricta
+                reconocido = reconocido.lower().strip()
+                print(f"🗣️  Dijeste: '{reconocido}'")
+            except sr.UnknownValueError:
+                print("❌ No se pudo entender el sonido o guardaste silencio.")
+            except sr.RequestError as e:
+                print(f"❌ Error del servicio de reconocimiento: {e}")
+        
+        # Comparación y validación de resultados
+        print(f"📖 Traducción esperada: '{traduccion_correcta}'")
+        if reconocido == traduccion_correcta and reconocido != "":
+            puntuacion += 10
+            print(f"🎉 ¡Excelente! +10 puntos. Puntuación: {puntuacion} 🏆")
+        else:
+            errores += 1
+            print(f"❌ ¡Incorrecto o no reconocido! Errores: {errores}/{MAX_ERRORES} ⚠️")
+            
+        # Pausa para lectura de resultados entre rondas 
+        time.sleep(2)
+        
+    # Limpieza final del archivo de audio temporal
+    if os.path.exists(FILE_NAME):
+        try:
+            os.remove(FILE_NAME)
+        except OSError:
+            pass
+            
+    # Criterio: Lógica completa de Fin del juego
+    print("\n" + "=" * 75)
+    print("🏁 ¡FIN DEL JUEGO! 🏁")
+    print(f"Puntuación Total Final: {puntuacion} Puntos 🏆")
+    if errores >= MAX_ERRORES:
+        print("💀 Fuiste eliminado por alcanzar el límite de 3 errores.")
+    else:
+        print("🎉 ¡Increíble! Lograste completar todas las palabras del nivel.")
+    print("=" * 75)
+
+if __name__ == "__main__":
+    jugar()
